@@ -115,3 +115,11 @@
   * **Service**
     An abstract way to expose an application running on a set of Pods as a network service.
     With Kubernetes you don't need to modify your application to use an unfamiliar service discovery mechanism. Kubernetes gives Pods their own IP addresses and a single DNS name for a set of Pods, and can load-balance across them.
+    
+  * **Labels and Selectors**
+    Labels are key/value pairs that are attached to objects, such as pods.
+    Labels can be used to organize and to select subsets of objects. Labels can be attached to objects at creation time and subsequently added and modified at any time.
+  
+  * **Namespaces**
+    Kubernetes supports multiple virtual clusters backed by the same physical cluster. These virtual clusters are called namespaces.
+    Namespaces are a way to divide cluster resources between multiple users.
