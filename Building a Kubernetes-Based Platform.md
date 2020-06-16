@@ -233,6 +233,90 @@
   ETCDCTL_API=3 /opt/etcd/bin/etcdctl --cacert=/opt/etcd/ssl/ca.pem --cert=/opt/etcd/ssl/server.pem --key=/opt/etcd/ssl/server-key.pem --endpoints="https://192.168.1.4:2379,https://192.168.1.5:2379,https://192.168.1.6:2379" endpoint health
   ```
 
+* Deploy k8s master
+
+  ```sh
+  # On master1
+  # Create CA: ca.pem & ca-key.pem
+  cat > /root/TLS/k8s/ca-config.json << EOF
+  {
+      "signing":{
+          "default":{
+              "expiry":"87600h"
+          },
+          "profiles":{
+              "kubernetes":{
+                  "expiry":"87600h",
+                  "usages":[
+                      "signing",
+                      "key encipherment",
+                      "server auth",
+                      "client auth"
+                  ]
+              }
+          }
+      }
+  }
+  EOF
+  cat > /root/TLS/k8s/ca-csr.json << EOF
+  {
+      "CN":"kubernetes",
+      "key":{
+          "algo":"rsa",
+          "size":2048
+      },
+      "names":[
+          {
+              "C":"CN",
+              "L":"Beijing",
+              "ST":"Beijing",
+              "O":"k8s",
+              "OU":"System"
+          }
+      ]
+  }
+  EOF
+  cfssl gencert -initca ca-csr.json | cfssljson -bare ca -
+  ls *pem
+  
+  # Create kube-apiserver HTTPS certificate using self-signed CA: server.pem & server-key.pem
+  # Master / LB / Floating IP, all should be included
+  cat > /root/TLS/k8s/server-csr.json << EOF
+  {
+      "CN":"kubernetes",
+      "hosts":[
+          "10.0.0.1",
+          "127.0.0.1",
+          "192.168.1.4",
+          "192.168.1.5",
+          "Floating IP",
+          "192.168.1.8",
+          "192.168.1.9",
+          "kubernetes",
+          "kubernetes.default",
+          "kubernetes.default.svc",
+          "kubernetes.default.svc.cluster",
+          "kubernetes.default.svc.cluster.local"
+      ],
+      "key":{
+          "algo":"rsa",
+          "size":2048
+      },
+      "names":[
+          {
+              "C":"CN",
+              "L":"BeiJing",
+              "ST":"BeiJing",
+              "O":"k8s",
+              "OU":"System"
+          }
+      ]
+  }
+  EOF
+  cfssl gencert -ca=ca.pem -ca-key=ca-key.pem -config=ca-config.json -profile=kubernetes server-csr.json | cfssljson -bare server
+  ls server*pem
+  ```
+
   
 
 
