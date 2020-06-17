@@ -315,8 +315,136 @@
   EOF
   cfssl gencert -ca=ca.pem -ca-key=ca-key.pem -config=ca-config.json -profile=kubernetes server-csr.json | cfssljson -bare server
   ls server*pem
+  
+# Upload kubernetes-server-linux-amd64.tar.gz to server
+  mkdir -p /opt/kubernetes/{bin,cfg,ssl,logs}
+  tar zxf kubernetes-server-linux-amd64.tar.gz
+  cd kubernetes/server/bin
+  cp kube-apiserver kube-scheduler kube-controller-manager /opt/kubernetes/bin
+  cp kubectl /usr/bin
+  
+  # Deploy kube-apiserver
+  cat > /opt/kubernetes/cfg/kube-apiserver.conf << EOF
+  KUBE_APISERVER_OPTS="--logtostderr=false                                                               \\
+  --v=2                                                                                                  \\
+  --log-dir=/opt/kubernetes/logs                                                                         \\
+  --etcd-servers=https://192.168.1.4:2379,https://192.168.1.5:2379,https://192.168.1.6:2379              \\
+  --bind-address=192.168.1.4                                                                             \\
+  --secure-port=6443                                                                                     \\
+  --advertise-address=192.168.1.4                                                                        \\
+  --allow-privileged=true                                                                                \\
+  --service-cluster-ip-range=10.0.0.0/24                                                                 \\
+  --enable-admission-plugins=NamespaceLifecycle,LimitRanger,ServiceAccount,ResourceQuota,NodeRestriction \\
+  --authorization-mode=RBAC,Node                                                                         \\
+  --enable-bootstrap-token-auth=true                                                                     \\
+  --token-auth-file=/opt/kubernetes/cfg/token.csv                                                        \\
+  --service-node-port-range=30000-32767                                                                  \\
+  --kubelet-client-certificate=/opt/kubernetes/ssl/server.pem                                            \\
+  --kubelet-client-key=/opt/kubernetes/ssl/server-key.pem                                                \\
+  --tls-cert-file=/opt/kubernetes/ssl/server.pem                                                         \\
+  --tls-private-key-file=/opt/kubernetes/ssl/server-key.pem                                              \\
+  --client-ca-file=/opt/kubernetes/ssl/ca.pem                                                            \\
+  --service-account-key-file=/opt/kubernetes/ssl/ca-key.pem                                              \\
+  --etcd-cafile=/opt/etcd/ssl/ca.pem                                                                     \\
+  --etcd-certfile=/opt/etcd/ssl/server.pem                                                               \\
+  --etcd-keyfile=/opt/etcd/ssl/server-key.pem                                                            \\
+  --audit-log-maxage=30                                                                                  \\
+  --audit-log-maxbackup=3                                                                                \\
+  --audit-log-maxsize=100                                                                                \\
+  --audit-log-path=/opt/kubernetes/logs/k8s-audit.log"
+  EOF
+  
+  cat > /opt/kubernetes/cfg/token.csv << EOF
+  c47ffb939f5ca36231d9e3121a252940,kubelet-bootstrap,10001,"system:node-bootstrapper"
+  EOF
+  
+  cp ~/TLS/k8s/ca*pem ~/TLS/k8s/server*pem /opt/kubernetes/ssl/
+  
+  cat > /usr/lib/systemd/system/kube-apiserver.service << EOF
+  [Unit]
+  Description=Kubernetes API Server
+  Documentation=https://github.com/kubernetes/kubernetes
+  [Service]
+  EnvironmentFile=/opt/kubernetes/cfg/kube-apiserver.conf
+  ExecStart=/opt/kubernetes/bin/kube-apiserver \$KUBE_APISERVER_OPTS
+  Restart=on-failure
+  [Install]
+  WantedBy=multi-user.target
+  EOF
+  
+  systemctl daemon-reload
+  systemctl enable kube-apiserver
+  systemctl start kube-apiserver
+  
+  # Grant permission to kubelet-bootstrap
+  kubectl create clusterrolebinding kubelet-bootstrap \
+  --clusterrole=system:node-bootstrapper \
+  --user=kubelet-bootstrap
+  
+  # Deploy kube-controller-manager
+  cat > /opt/kubernetes/cfg/kube-controller-manager.conf << EOF
+  KUBE_CONTROLLER_MANAGER_OPTS="--logtostderr=false                 \\
+  --v=2                                                             \\
+  --log-dir=/opt/kubernetes/logs                                    \\
+  --leader-elect=true                                               \\
+  --master=127.0.0.1:8080                                           \\
+  --bind-address=127.0.0.1                                          \\
+  --allocate-node-cidrs=true                                        \\
+  --cluster-cidr=10.244.0.0/16                                      \\
+  --service-cluster-ip-range=10.0.0.0/24                            \\
+  --cluster-signing-cert-file=/opt/kubernetes/ssl/ca.pem            \\
+  --cluster-signing-key-file=/opt/kubernetes/ssl/ca-key.pem         \\
+  --root-ca-file=/opt/kubernetes/ssl/ca.pem                         \\
+  --service-account-private-key-file=/opt/kubernetes/ssl/ca-key.pem \\
+  --experimental-cluster-signing-duration=87600h0m0s"
+  EOF
+  
+  cat > /usr/lib/systemd/system/kube-controller-manager.service << EOF
+  [Unit]
+  Description=Kubernetes Controller Manager
+  Documentation=https://github.com/kubernetes/kubernetes
+  [Service]
+  EnvironmentFile=/opt/kubernetes/cfg/kube-controller-manager.conf
+  ExecStart=/opt/kubernetes/bin/kube-controller-manager \$KUBE_CONTROLLER_MANAGER_OPTS
+  Restart=on-failure
+  [Install]
+  WantedBy=multi-user.target
+  EOF
+  
+  systemctl daemon-reload
+  systemctl enable kube-controller-manager
+  systemctl start kube-controller-manager
+  
+  # Deploy kube-scheduler
+  cat > /opt/kubernetes/cfg/kube-scheduler.conf << EOF
+  KUBE_SCHEDULER_OPTS="--logtostderr=false \
+  --v=2                                    \
+  --log-dir=/opt/kubernetes/logs           \
+  --leader-elect                           \
+  --master=127.0.0.1:8080                  \
+  --bind-address=127.0.0.1"
+  EOF
+  
+  cat > /usr/lib/systemd/system/kube-scheduler.service << EOF
+  [Unit]
+  Description=Kubernetes Scheduler
+  Documentation=https://github.com/kubernetes/kubernetes
+  [Service]
+  EnvironmentFile=/opt/kubernetes/cfg/kube-scheduler.conf
+  ExecStart=/opt/kubernetes/bin/kube-scheduler \$KUBE_SCHEDULER_OPTS
+  Restart=on-failure
+  [Install]
+  WantedBy=multi-user.target
+  EOF
+  
+  systemctl daemon-reload
+  systemctl enable kube-scheduler
+  systemctl start kube-scheduler
+  
+  # Verify the K8S cluster
+  kubectl get cs
   ```
-
+  
   
 
 
