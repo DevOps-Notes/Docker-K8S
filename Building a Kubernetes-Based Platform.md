@@ -316,7 +316,7 @@
   cfssl gencert -ca=ca.pem -ca-key=ca-key.pem -config=ca-config.json -profile=kubernetes server-csr.json | cfssljson -bare server
   ls server*pem
   
-# Upload kubernetes-server-linux-amd64.tar.gz to server
+  # Upload kubernetes-server-linux-amd64.tar.gz to server
   mkdir -p /opt/kubernetes/{bin,cfg,ssl,logs}
   tar zxf kubernetes-server-linux-amd64.tar.gz
   cd kubernetes/server/bin
@@ -444,10 +444,3 @@
   # Verify the K8S cluster
   kubectl get cs
   ```
-  
-  
-
-
-
-
-
